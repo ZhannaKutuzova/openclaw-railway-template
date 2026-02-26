@@ -7,6 +7,7 @@ import path from "node:path";
 import express from "express";
 import httpProxy from "http-proxy";
 import pty from "node-pty";
+import WebSocket from "ws";
 import { WebSocketServer } from "ws";
 
 const PORT = Number.parseInt(process.env.PORT ?? "8080", 10);
@@ -893,9 +894,6 @@ app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
 const GATEWAY_WS_URL = `ws://127.0.0.1:${INTERNAL_GATEWAY_PORT}`;
 
 function connectToInternalGateway(timeoutMs = 30000) {
-  const WebSocket = require("ws");
-  const crypto = require("crypto");
-
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
@@ -951,7 +949,6 @@ function connectToInternalGateway(timeoutMs = 30000) {
 }
 
 function sendGatewayRequest(ws, method, params, timeoutMs = 30000) {
-  const crypto = require("crypto");
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve({ ok: false, error: "timeout" }), timeoutMs);
     const reqId = crypto.randomBytes(8).toString("hex");
