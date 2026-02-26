@@ -907,6 +907,24 @@ app.post("/api/config/set", requireSetupAuth, async (req, res) => {
   }
 });
 
+app.post("/api/workspace/write", requireSetupAuth, async (req, res) => {
+  try {
+    const { filename, content } = req.body || {};
+    if (!filename || typeof filename !== "string") {
+      return res.status(400).json({ ok: false, error: "filename required" });
+    }
+    const safe = path.basename(filename);
+    if (safe !== filename || filename.includes("..")) {
+      return res.status(400).json({ ok: false, error: "invalid filename" });
+    }
+    fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(WORKSPACE_DIR, safe), content || "", "utf8");
+    return res.json({ ok: true, path: path.join(WORKSPACE_DIR, safe) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post("/api/config/restart-gateway", requireSetupAuth, async (_req, res) => {
   try {
     await restartGateway();
