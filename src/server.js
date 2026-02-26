@@ -887,6 +887,35 @@ app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
 });
 
 
+
+// === Anunnak: Config management via CLI ===
+
+app.post("/api/config/set", requireSetupAuth, async (req, res) => {
+  try {
+    const { key, value, json } = req.body || {};
+    if (!key) return res.status(400).json({ ok: false, error: "key required" });
+
+    const args = ["config", "set"];
+    if (json) args.push("--json");
+    args.push(key);
+    if (value !== undefined) args.push(typeof value === "string" ? value : JSON.stringify(value));
+
+    const result = await runCmd(OPENCLAW_NODE, clawArgs(args));
+    return res.json({ ok: result.code === 0, output: result.output });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/api/config/restart-gateway", requireSetupAuth, async (_req, res) => {
+  try {
+    await restartGateway();
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // === Anunnak: Channel management REST API ===
 // These endpoints connect to the internal gateway on loopback (auto-approved)
 // to perform admin operations like channels.login for WhatsApp QR.
