@@ -614,6 +614,28 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       );
       extra += `[config] gateway.controlUi.allowInsecureAuth=true exit=${allowInsecureResult.code}\n`;
 
+    const deviceAuthResult = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "gateway.controlUi.dangerouslyDisableDeviceAuth",
+        "true",
+      ]),
+    );
+    extra += `[config] gateway.controlUi.dangerouslyDisableDeviceAuth=true exit=${deviceAuthResult.code}\n`;
+
+    const hostHeaderResult = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback",
+        "true",
+      ]),
+    );
+    extra += `[config] gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true exit=${hostHeaderResult.code}\n`;
+
       const tokenResult = await runCmd(
         OPENCLAW_NODE,
         clawArgs([
