@@ -885,6 +885,135 @@ app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
   }
 });
 
+
+// === Anunnak: Channel management REST API ===
+// These endpoints connect to the internal gateway on loopback (auto-approved)
+// to perform admin operations like channels.login for WhatsApp QR.
+
+const GATEWAY_WS_URL = `ws://127.0.0.1:${INTERNAL_GATEWAY_PORT}`;
+
+function connectToInternalGateway(timeoutMs = 30000) {
+  const WebSocket = require("ws");
+  const crypto = require("crypto");
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch {}
+      reject(new Error("Gateway connection timeout"));
+    }, timeoutMs);
+
+    const ws = new WebSocket(GATEWAY_WS_URL);
+    let connected = false;
+
+    ws.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(raw.toString());
+
+      if (msg.type === "event" && msg.event === "connect.challenge") {
+        ws.send(JSON.stringify({
+          type: "req",
+          id: crypto.randomBytes(8).toString("hex"),
+          method: "connect",
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: { id: "cli", version: "1.0.0", platform: "linux", mode: "ui" },
+            role: "operator",
+            scopes: ["operator.read", "operator.write", "operator.admin", "operator.pairing"],
+            caps: [],
+            commands: [],
+            permissions: {},
+            auth: { token: OPENCLAW_GATEWAY_TOKEN },
+            locale: "en-US",
+            userAgent: "openclaw-wrapper/1.0",
+          },
+        }));
+        return;
+      }
+
+      if (msg.type === "res" && !connected) {
+        if (msg.ok && msg.payload?.type === "hello-ok") {
+          connected = true;
+          clearTimeout(timer);
+          resolve({ ws, snapshot: msg.payload?.snapshot });
+        } else {
+          clearTimeout(timer);
+          try { ws.close(); } catch {}
+          reject(new Error(msg.error?.message || "Connect rejected"));
+        }
+      }
+    });
+  });
+}
+
+function sendGatewayRequest(ws, method, params, timeoutMs = 30000) {
+  const crypto = require("crypto");
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ ok: false, error: "timeout" }), timeoutMs);
+    const reqId = crypto.randomBytes(8).toString("hex");
+
+    const handler = (raw) => {
+      const msg = JSON.parse(raw.toString());
+      // Return QR from events (WhatsApp sends QR via events)
+      if (msg.type === "event" && msg.event !== "connect.challenge" && msg.event !== "health") {
+        const qr = msg.payload?.qr || msg.payload?.data || msg.payload?.code;
+        if (qr && typeof qr === "string" && qr.length > 10) {
+          clearTimeout(timer);
+          ws.removeListener("message", handler);
+          resolve({ ok: true, payload: { qr, event: msg.event } });
+          return;
+        }
+      }
+      if (msg.type === "res" && msg.id === reqId) {
+        clearTimeout(timer);
+        ws.removeListener("message", handler);
+        resolve({ ok: msg.ok, payload: msg.payload, error: msg.error });
+      }
+    };
+    ws.on("message", handler);
+    ws.send(JSON.stringify({ type: "req", id: reqId, method, params }));
+  });
+}
+
+app.get("/api/channels/status", requireSetupAuth, async (_req, res) => {
+  try {
+    const { ws, snapshot } = await connectToInternalGateway(10000);
+    const channels = snapshot?.health?.channels || {};
+    try { ws.close(); } catch {}
+    return res.json({ ok: true, channels });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/api/channels/whatsapp/login", requireSetupAuth, async (req, res) => {
+  try {
+    const { ws } = await connectToInternalGateway(15000);
+    const result = await sendGatewayRequest(ws, "channels.login", { channel: "whatsapp" }, 30000);
+    try { ws.close(); } catch {}
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/api/channels/whatsapp/logout", requireSetupAuth, async (req, res) => {
+  try {
+    const { ws } = await connectToInternalGateway(10000);
+    const result = await sendGatewayRequest(ws, "channels.logout", { channel: "whatsapp" }, 15000);
+    try { ws.close(); } catch {}
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// === End Anunnak channel management ===
+
 app.get("/tui", requireSetupAuth, (_req, res) => {
   if (!ENABLE_WEB_TUI) {
     return res
